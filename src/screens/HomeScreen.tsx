@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -8,38 +8,55 @@ import {
     TextInput,
     Alert,
     SafeAreaView,
-    RefreshControl,
 } from 'react-native';
-import { Plus, Flame, Zap, Battery, Filter } from 'lucide-react-native';
+import { Plus, Flame, Zap, Battery } from 'lucide-react-native';
+import { Q } from '@nozbe/watermelondb';
+import withObservables from '@nozbe/with-observables';
+import { database } from '../database';
+import Task, { EnergyLevel } from '../database/models/Task';
 import { DisciplineMeter } from '../components/DisciplineMeter';
-import { DisciplineScoreService } from '../services/DisciplineScoreService';
-import { storage, Task, EnergyLevel } from '../services/StorageService';
-import { useAppStore } from '../store/appStore';
+import { TaskItem } from '../components/TaskItem';
+import { DisciplineService } from '../services/DisciplineService';
+import { StatsService } from '../services/StatsService';
 
-export const HomeScreen: React.FC = () => {
-    const [tasks, setTasks] = useState<Task[]>([]);
+type EnergyFilter = 'all' | 'high' | 'medium' | 'low';
+
+interface HomeScreenProps {
+    tasks: Task[];
+}
+
+const HomeScreenComponent: React.FC<HomeScreenProps> = ({ tasks }) => {
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [selectedEnergy, setSelectedEnergy] = useState<EnergyLevel>('medium');
     const [isNonNegotiable, setIsNonNegotiable] = useState(false);
-    const [refreshing, setRefreshing] = useState(false);
-    const { currentScore, setCurrentScore, selectedEnergyFilter, setEnergyFilter } = useAppStore();
+    const [energyFilter, setEnergyFilter] = useState<EnergyFilter>('all');
 
-    const loadData = useCallback(async () => {
-        const todayTasks = await storage.getTasksForToday();
-        setTasks(todayTasks);
-        const score = await DisciplineScoreService.getTodayScore();
-        setCurrentScore(score);
-    }, [setCurrentScore]);
+    // Calculate real-time discipline score
+    const score = DisciplineService.getScore(tasks);
 
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
+    // Sync score to database whenever it changes
+    React.useEffect(() => {
+        const syncScore = async () => {
+            await StatsService.syncScore(score);
+        };
+        syncScore();
+    }, [score]);
 
-    const onRefresh = useCallback(async () => {
-        setRefreshing(true);
-        await loadData();
-        setRefreshing(false);
-    }, [loadData]);
+
+    // Filter tasks based on energy level
+    const getFilteredTasks = () => {
+        if (energyFilter === 'all') return tasks;
+
+        // If "High" is selected, show all tasks (if you can do high, you can do all)
+        if (energyFilter === 'high') return tasks;
+
+        // For medium and low, filter accordingly
+        return tasks.filter(task => task.energyLevel === energyFilter);
+    };
+
+    const filteredTasks = getFilteredTasks();
+    const pendingTasks = filteredTasks.filter(t => t.status === 'pending');
+    const completedTasks = filteredTasks.filter(t => t.status === 'completed');
 
     const handleAddTask = async () => {
         if (!newTaskTitle.trim()) {
@@ -47,135 +64,44 @@ export const HomeScreen: React.FC = () => {
             return;
         }
 
-        await storage.addTask({
-            title: newTaskTitle.trim(),
-            isNonNegotiable,
-            energyLevel: selectedEnergy,
-            status: 'pending',
-            snoozeCount: 0,
-            didCommit: false,
+        const tasksCollection = database.collections.get<Task>('tasks');
+
+        await database.write(async () => {
+            await tasksCollection.create(task => {
+                task.title = newTaskTitle.trim();
+                task.isNonNegotiable = isNonNegotiable;
+                task.energyLevel = selectedEnergy;
+                task.status = 'pending';
+                task.snoozeCount = 0;
+                task.didCommit = false;
+            });
         });
 
         setNewTaskTitle('');
         setIsNonNegotiable(false);
-        await loadData();
     };
 
-    const handleToggleComplete = async (task: Task) => {
-        await storage.updateTask(task.id, {
-            status: task.status === 'completed' ? 'pending' : 'completed',
-        });
-        await DisciplineScoreService.updateTodayScore();
-        await loadData();
-    };
-
-    const handleCommit = async (task: Task) => {
-        if (!task.didCommit) {
-            Alert.alert(
-                '💪 Commit to This Task?',
-                'By committing, you pledge to complete this task. Breaking this commitment will cost you -10 discipline points.',
-                [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                        text: 'Commit',
-                        style: 'default',
-                        onPress: async () => {
-                            await storage.updateTask(task.id, { didCommit: true });
-                            await loadData();
-                            Alert.alert('✅ Committed!', "You've made a commitment. Don't break it!");
-                        },
-                    },
-                ]
-            );
-        }
-    };
-
-    const handleSnooze = async (task: Task) => {
-        await storage.updateTask(task.id, {
-            snoozeCount: task.snoozeCount + 1,
-        });
-        await DisciplineScoreService.updateTodayScore();
-        await loadData();
-        Alert.alert('⏰ Task Snoozed', 'This will cost you -5 discipline points.');
-    };
-
-    // Filter tasks
-    const filteredTasks = tasks.filter((task) => {
-        if (selectedEnergyFilter === 'all') return true;
-        return task.energyLevel === selectedEnergyFilter;
-    });
-
-    // Get non-negotiables (top 3)
-    const nonNegotiables = tasks
-        .filter((t) => t.isNonNegotiable && t.status !== 'completed')
-        .slice(0, 3);
-
-    // Get pending tasks
-    const pendingTasks = filteredTasks.filter((t) => t.status === 'pending');
-
-    const getEnergyIcon = (level: EnergyLevel) => {
+    const getEnergyIcon = (level: EnergyLevel, isActive: boolean) => {
+        const color = isActive ? getEnergyColor(level) : '#666';
         switch (level) {
             case 'high':
-                return <Flame size={16} color="#FF1744" />;
+                return <Flame size={16} color={color} />;
             case 'medium':
-                return <Zap size={16} color="#FFD700" />;
+                return <Zap size={16} color={color} />;
             case 'low':
-                return <Battery size={16} color="#00FF94" />;
+                return <Battery size={16} color={color} />;
         }
     };
 
-    const renderTask = (task: Task) => {
-        const isCompleted = task.status === 'completed';
-
-        return (
-            <TouchableOpacity
-                key={task.id}
-                onLongPress={() => handleCommit(task)}
-                style={[
-                    styles.taskContainer,
-                    task.isNonNegotiable && styles.nonNegotiable,
-                    task.didCommit && styles.committed,
-                ]}
-            >
-                <TouchableOpacity onPress={() => handleToggleComplete(task)} style={styles.checkbox}>
-                    <Text style={styles.checkboxText}>{isCompleted ? '✅' : '⭕'}</Text>
-                </TouchableOpacity>
-
-                <View style={styles.taskContent}>
-                    <View style={styles.titleRow}>
-                        <Text style={[styles.taskTitle, isCompleted && styles.completedText]}>
-                            {task.title}
-                        </Text>
-                        {task.isNonNegotiable && (
-                            <View style={styles.badge}>
-                                <Text style={styles.badgeText}>3x</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    <View style={styles.metaRow}>
-                        <View style={styles.energyBadge}>
-                            {getEnergyIcon(task.energyLevel)}
-                            <Text style={styles.energyText}>{task.energyLevel}</Text>
-                        </View>
-
-                        {task.snoozeCount > 0 && (
-                            <Text style={styles.snoozeText}>⏰ {task.snoozeCount}</Text>
-                        )}
-
-                        {task.didCommit && (
-                            <View style={styles.commitBadge}>
-                                <Text style={styles.commitText}>💪 COMMITTED</Text>
-                            </View>
-                        )}
-                    </View>
-                </View>
-
-                <TouchableOpacity onPress={() => handleSnooze(task)} style={styles.snoozeButton}>
-                    <Text style={styles.snoozeButtonText}>⏰</Text>
-                </TouchableOpacity>
-            </TouchableOpacity>
-        );
+    const getEnergyColor = (level: EnergyLevel) => {
+        switch (level) {
+            case 'high':
+                return '#FF1744';
+            case 'medium':
+                return '#FFD700';
+            case 'low':
+                return '#00FF94';
+        }
     };
 
     return (
@@ -183,9 +109,6 @@ export const HomeScreen: React.FC = () => {
             <ScrollView
                 style={styles.container}
                 contentContainerStyle={styles.contentContainer}
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00FF94" />
-                }
             >
                 {/* Header */}
                 <View style={styles.header}>
@@ -193,26 +116,11 @@ export const HomeScreen: React.FC = () => {
                     <Text style={styles.headerSubtitle}>Discipline OS</Text>
                 </View>
 
-                {/* Discipline Meter */}
+                {/* Discipline Meter - Updates in real-time */}
                 <View style={styles.meterSection}>
-                    <DisciplineMeter score={currentScore} size={220} />
+                    <DisciplineMeter score={score} size={240} />
                     <Text style={styles.meterLabel}>Your Character Workout Score</Text>
                 </View>
-
-                {/* Non-Negotiables Card */}
-                {nonNegotiables.length > 0 && (
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>⚡ NON-NEGOTIABLES</Text>
-                            <View style={styles.weightBadge}>
-                                <Text style={styles.weightBadgeText}>3x WEIGHT</Text>
-                            </View>
-                        </View>
-                        <View style={styles.card}>
-                            {nonNegotiables.map(renderTask)}
-                        </View>
-                    </View>
-                )}
 
                 {/* Add Task Section */}
                 <View style={styles.section}>
@@ -230,6 +138,7 @@ export const HomeScreen: React.FC = () => {
                         {/* Energy Level Selector */}
                         <View style={styles.energySelector}>
                             <Text style={styles.energyLabel}>Energy:</Text>
+
                             <TouchableOpacity
                                 style={[
                                     styles.energyButton,
@@ -237,7 +146,7 @@ export const HomeScreen: React.FC = () => {
                                 ]}
                                 onPress={() => setSelectedEnergy('high')}
                             >
-                                <Flame size={16} color={selectedEnergy === 'high' ? '#FF1744' : '#666'} />
+                                {getEnergyIcon('high', selectedEnergy === 'high')}
                                 <Text
                                     style={[
                                         styles.energyButtonText,
@@ -255,7 +164,7 @@ export const HomeScreen: React.FC = () => {
                                 ]}
                                 onPress={() => setSelectedEnergy('medium')}
                             >
-                                <Zap size={16} color={selectedEnergy === 'medium' ? '#FFD700' : '#666'} />
+                                {getEnergyIcon('medium', selectedEnergy === 'medium')}
                                 <Text
                                     style={[
                                         styles.energyButtonText,
@@ -273,7 +182,7 @@ export const HomeScreen: React.FC = () => {
                                 ]}
                                 onPress={() => setSelectedEnergy('low')}
                             >
-                                <Battery size={16} color={selectedEnergy === 'low' ? '#00FF94' : '#666'} />
+                                {getEnergyIcon('low', selectedEnergy === 'low')}
                                 <Text
                                     style={[
                                         styles.energyButtonText,
@@ -307,30 +216,25 @@ export const HomeScreen: React.FC = () => {
                     </View>
                 </View>
 
-                {/* Task Lab */}
+                {/* Task Lab with Energy Filter */}
                 <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>🔬 TASK LAB</Text>
-                        <TouchableOpacity style={styles.filterButton}>
-                            <Filter size={16} color="#666" />
-                        </TouchableOpacity>
-                    </View>
+                    <Text style={styles.sectionTitle}>🔬 TASK LAB</Text>
 
-                    {/* Energy Filter */}
+                    {/* Energy Filter Pills */}
                     <View style={styles.filterRow}>
                         {(['all', 'high', 'medium', 'low'] as const).map((filter) => (
                             <TouchableOpacity
                                 key={filter}
                                 style={[
                                     styles.filterChip,
-                                    selectedEnergyFilter === filter && styles.filterChipActive,
+                                    energyFilter === filter && styles.filterChipActive,
                                 ]}
                                 onPress={() => setEnergyFilter(filter)}
                             >
                                 <Text
                                     style={[
                                         styles.filterChipText,
-                                        selectedEnergyFilter === filter && styles.filterChipTextActive,
+                                        energyFilter === filter && styles.filterChipTextActive,
                                     ]}
                                 >
                                     {filter.toUpperCase()}
@@ -339,27 +243,59 @@ export const HomeScreen: React.FC = () => {
                         ))}
                     </View>
 
-                    <View style={styles.taskList}>
-                        {pendingTasks.length === 0 ? (
-                            <Text style={styles.emptyText}>No pending tasks. Add one above! 🚀</Text>
-                        ) : (
-                            pendingTasks.map(renderTask)
-                        )}
-                    </View>
+                    {/* Pending Tasks */}
+                    {pendingTasks.length > 0 && (
+                        <View style={styles.taskSection}>
+                            <Text style={styles.taskSectionTitle}>
+                                Pending ({pendingTasks.length})
+                            </Text>
+                            {pendingTasks.map(task => (
+                                <TaskItem key={task.id} task={task} />
+                            ))}
+                        </View>
+                    )}
+
+                    {/* Completed Tasks */}
+                    {completedTasks.length > 0 && (
+                        <View style={styles.taskSection}>
+                            <Text style={styles.taskSectionTitle}>
+                                Completed ({completedTasks.length})
+                            </Text>
+                            {completedTasks.map(task => (
+                                <TaskItem key={task.id} task={task} />
+                            ))}
+                        </View>
+                    )}
+
+                    {/* Empty State */}
+                    {filteredTasks.length === 0 && (
+                        <Text style={styles.emptyText}>
+                            No tasks yet. Add one above! 🚀
+                        </Text>
+                    )}
                 </View>
             </ScrollView>
         </SafeAreaView>
     );
 };
 
+// Enhance with WatermelonDB observables for real-time updates
+const enhance = withObservables([], () => ({
+    tasks: database.collections.get<Task>('tasks').query(
+        Q.sortBy('created_at', Q.desc)
+    ),
+}));
+
+export const HomeScreen = enhance(HomeScreenComponent);
+
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: '#000000', // Pitch black background
     },
     container: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: '#000000',
     },
     contentContainer: {
         padding: 20,
@@ -368,10 +304,10 @@ const styles = StyleSheet.create({
         marginBottom: 32,
     },
     headerTitle: {
-        fontSize: 32,
+        fontSize: 36,
         fontWeight: '900',
         color: '#00FF94',
-        letterSpacing: 4,
+        letterSpacing: 6,
     },
     headerSubtitle: {
         fontSize: 14,
@@ -392,35 +328,12 @@ const styles = StyleSheet.create({
     section: {
         marginBottom: 32,
     },
-    sectionHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
     sectionTitle: {
         fontSize: 14,
         fontWeight: '700',
         color: '#fff',
         letterSpacing: 1,
-    },
-    weightBadge: {
-        backgroundColor: '#00FF9420',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 4,
-    },
-    weightBadgeText: {
-        fontSize: 10,
-        fontWeight: '900',
-        color: '#00FF94',
-    },
-    card: {
-        backgroundColor: '#0a0a0a',
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: '#1a1a1a',
+        marginBottom: 16,
     },
     addTaskCard: {
         backgroundColor: '#0a0a0a',
@@ -506,9 +419,6 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#000',
     },
-    filterButton: {
-        padding: 8,
-    },
     filterRow: {
         flexDirection: 'row',
         gap: 8,
@@ -534,102 +444,21 @@ const styles = StyleSheet.create({
     filterChipTextActive: {
         color: '#00FF94',
     },
-    taskList: {
-        gap: 12,
+    taskSection: {
+        marginBottom: 24,
+    },
+    taskSectionTitle: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#666',
+        letterSpacing: 1,
+        marginBottom: 12,
+        textTransform: 'uppercase',
     },
     emptyText: {
         fontSize: 14,
         color: '#666',
         textAlign: 'center',
         padding: 32,
-    },
-    taskContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#0a0a0a',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
-        borderWidth: 1,
-        borderColor: '#1a1a1a',
-    },
-    nonNegotiable: {
-        borderColor: '#00FF94',
-        borderWidth: 2,
-    },
-    committed: {
-        borderColor: '#FFD700',
-    },
-    checkbox: {
-        marginRight: 12,
-    },
-    checkboxText: {
-        fontSize: 24,
-    },
-    taskContent: {
-        flex: 1,
-    },
-    titleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    taskTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#fff',
-        flex: 1,
-    },
-    completedText: {
-        textDecorationLine: 'line-through',
-        color: '#666',
-    },
-    badge: {
-        backgroundColor: '#00FF94',
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 4,
-        marginLeft: 8,
-    },
-    badgeText: {
-        fontSize: 10,
-        fontWeight: '900',
-        color: '#000',
-    },
-    metaRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    energyBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    energyText: {
-        fontSize: 12,
-        color: '#666',
-        textTransform: 'uppercase',
-    },
-    snoozeText: {
-        fontSize: 12,
-        color: '#FF8C00',
-    },
-    commitBadge: {
-        backgroundColor: '#FFD70020',
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 4,
-    },
-    commitText: {
-        fontSize: 10,
-        fontWeight: '700',
-        color: '#FFD700',
-    },
-    snoozeButton: {
-        padding: 8,
-    },
-    snoozeButtonText: {
-        fontSize: 18,
     },
 });

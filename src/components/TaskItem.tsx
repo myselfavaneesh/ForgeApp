@@ -1,32 +1,40 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
-    Pressable,
     Alert,
 } from 'react-native';
-import { CheckCircle2, Circle, Flame, Zap, Battery } from 'lucide-react-native';
+import {
+    CheckCircle2,
+    Circle,
+    Flame,
+    Zap,
+    Battery,
+    Target,
+    Clock,
+} from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import withObservables from '@nozbe/with-observables';
 import Task from '../database/models/Task';
-import { DisciplineScoreService } from '../services/DisciplineScoreService';
 
 interface TaskItemProps {
     task: Task;
-    onScoreUpdate?: () => void;
+    onUpdate?: () => void;
 }
 
-export const TaskItem: React.FC<TaskItemProps> = ({ task, onScoreUpdate }) => {
-    const [isLongPressing, setIsLongPressing] = useState(false);
-
+const TaskItemComponent: React.FC<TaskItemProps> = ({ task, onUpdate }) => {
     const handleToggleComplete = async () => {
         await task.toggleStatus();
-        await DisciplineScoreService.updateTodayScore();
-        onScoreUpdate?.();
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        onUpdate?.();
     };
 
-    const handleLongPress = async () => {
+    const handleCommit = async () => {
         if (!task.didCommit) {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
             Alert.alert(
                 '💪 Commit to This Task?',
                 'By committing, you pledge to complete this task. Breaking this commitment will cost you -10 discipline points.',
@@ -37,7 +45,8 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onScoreUpdate }) => {
                         style: 'default',
                         onPress: async () => {
                             await task.commit();
-                            Alert.alert('✅ Committed!', 'You\'ve made a commitment. Don\'t break it!');
+                            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                            onUpdate?.();
                         },
                     },
                 ]
@@ -47,9 +56,8 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onScoreUpdate }) => {
 
     const handleSnooze = async () => {
         await task.incrementSnooze();
-        await DisciplineScoreService.updateTodayScore();
-        onScoreUpdate?.();
-        Alert.alert('⏰ Task Snoozed', 'This will cost you -5 discipline points.');
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onUpdate?.();
     };
 
     const getEnergyIcon = () => {
@@ -66,18 +74,14 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onScoreUpdate }) => {
     const isCompleted = task.status === 'completed';
 
     return (
-        <Pressable
-            onLongPress={handleLongPress}
-            onPressIn={() => setIsLongPressing(true)}
-            onPressOut={() => setIsLongPressing(false)}
-            delayLongPress={500}
+        <View
             style={[
                 styles.container,
                 task.isNonNegotiable && styles.nonNegotiable,
-                isLongPressing && styles.pressing,
                 task.didCommit && styles.committed,
             ]}
         >
+            {/* Checkbox */}
             <TouchableOpacity onPress={handleToggleComplete} style={styles.checkbox}>
                 {isCompleted ? (
                     <CheckCircle2 size={24} color="#00FF94" />
@@ -86,6 +90,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onScoreUpdate }) => {
                 )}
             </TouchableOpacity>
 
+            {/* Content */}
             <View style={styles.content}>
                 <View style={styles.titleRow}>
                     <Text style={[styles.title, isCompleted && styles.completedText]}>
@@ -105,7 +110,10 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onScoreUpdate }) => {
                     </View>
 
                     {task.snoozeCount > 0 && (
-                        <Text style={styles.snoozeText}>⏰ {task.snoozeCount}</Text>
+                        <View style={styles.snoozeBadge}>
+                            <Clock size={12} color="#FF8C00" />
+                            <Text style={styles.snoozeText}>{task.snoozeCount}</Text>
+                        </View>
                     )}
 
                     {task.didCommit && (
@@ -116,10 +124,24 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onScoreUpdate }) => {
                 </View>
             </View>
 
-            <TouchableOpacity onPress={handleSnooze} style={styles.snoozeButton}>
-                <Text style={styles.snoozeButtonText}>⏰</Text>
-            </TouchableOpacity>
-        </Pressable>
+            {/* Action Buttons */}
+            <View style={styles.actions}>
+                {/* Commit Button */}
+                {!task.didCommit && (
+                    <TouchableOpacity
+                        onPress={handleCommit}
+                        style={styles.commitButton}
+                    >
+                        <Target size={20} color="#FFD700" />
+                    </TouchableOpacity>
+                )}
+
+                {/* Snooze Button */}
+                <TouchableOpacity onPress={handleSnooze} style={styles.snoozeButton}>
+                    <Clock size={18} color="#666" />
+                </TouchableOpacity>
+            </View>
+        </View>
     );
 };
 
@@ -138,12 +160,15 @@ const styles = StyleSheet.create({
         borderColor: '#00FF94',
         borderWidth: 2,
     },
-    pressing: {
-        backgroundColor: '#1a1a1a',
-        transform: [{ scale: 0.98 }],
-    },
     committed: {
         borderColor: '#FFD700',
+        borderWidth: 2,
+        // Glow effect for committed tasks
+        shadowColor: '#FFD700',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
     },
     checkbox: {
         marginRight: 12,
@@ -193,9 +218,19 @@ const styles = StyleSheet.create({
         color: '#666',
         textTransform: 'uppercase',
     },
+    snoozeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: '#FF8C0020',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
     snoozeText: {
         fontSize: 12,
         color: '#FF8C00',
+        fontWeight: '600',
     },
     commitBadge: {
         backgroundColor: '#FFD70020',
@@ -208,10 +243,24 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#FFD700',
     },
+    actions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginLeft: 8,
+    },
+    commitButton: {
+        padding: 8,
+        backgroundColor: '#FFD70020',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#FFD700',
+    },
     snoozeButton: {
         padding: 8,
     },
-    snoozeButtonText: {
-        fontSize: 18,
-    },
 });
+
+export const TaskItem = withObservables(['task'], ({ task }) => ({
+    task
+}))(TaskItemComponent);

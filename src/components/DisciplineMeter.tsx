@@ -1,6 +1,13 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import Animated, {
+    useSharedValue,
+    useAnimatedProps,
+    withSpring,
+    interpolate,
+} from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
+import { DisciplineService } from '../services/DisciplineService';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -9,31 +16,39 @@ interface DisciplineMeterProps {
     size?: number;
 }
 
-export const DisciplineMeter: React.FC<DisciplineMeterProps> = ({ score, size = 200 }) => {
-    const animatedValue = useRef(new Animated.Value(0)).current;
+export const DisciplineMeter: React.FC<DisciplineMeterProps> = ({
+    score,
+    size = 220
+}) => {
+    const progress = useSharedValue(0);
     const radius = (size - 20) / 2;
     const circumference = 2 * Math.PI * radius;
+    const strokeWidth = 12;
 
     useEffect(() => {
-        Animated.timing(animatedValue, {
-            toValue: score / 100,
-            duration: 1500,
-            useNativeDriver: true,
-        }).start();
+        // Animate to the new score with a spring animation
+        progress.value = withSpring(score / 100, {
+            damping: 15,
+            stiffness: 100,
+            mass: 1,
+        });
     }, [score]);
 
-    const strokeDashoffset = animatedValue.interpolate({
-        inputRange: [0, 1],
-        outputRange: [circumference, 0],
+    const animatedProps = useAnimatedProps(() => {
+        const strokeDashoffset = interpolate(
+            progress.value,
+            [0, 1],
+            [circumference, 0]
+        );
+
+        return {
+            strokeDashoffset,
+        };
     });
 
-    // Color based on score
-    const getColor = () => {
-        if (score >= 80) return '#00FF94'; // Neon green
-        if (score >= 60) return '#FFD700'; // Gold
-        if (score >= 40) return '#FF8C00'; // Orange
-        return '#FF1744'; // Red
-    };
+    // Get color and status based on score
+    const color = DisciplineService.getScoreHexColor(score);
+    const status = DisciplineService.getScoreStatus(score);
 
     return (
         <View style={[styles.container, { width: size, height: size }]}>
@@ -44,27 +59,33 @@ export const DisciplineMeter: React.FC<DisciplineMeterProps> = ({ score, size = 
                     cy={size / 2}
                     r={radius}
                     stroke="#1a1a1a"
-                    strokeWidth={10}
+                    strokeWidth={strokeWidth}
                     fill="none"
                 />
-                {/* Progress Circle */}
+
+                {/* Progress Circle with Animation */}
                 <AnimatedCircle
                     cx={size / 2}
                     cy={size / 2}
                     r={radius}
-                    stroke={getColor()}
-                    strokeWidth={10}
+                    stroke={color}
+                    strokeWidth={strokeWidth}
                     fill="none"
                     strokeDasharray={circumference}
-                    strokeDashoffset={strokeDashoffset}
+                    animatedProps={animatedProps}
                     strokeLinecap="round"
                     rotation="-90"
                     origin={`${size / 2}, ${size / 2}`}
                 />
             </Svg>
-            <View style={styles.scoreContainer}>
-                <Text style={[styles.scoreText, { color: getColor() }]}>{Math.round(score)}</Text>
-                <Text style={styles.labelText}>DISCIPLINE</Text>
+
+            {/* Center Content */}
+            <View style={styles.centerContent}>
+                <Text style={[styles.scoreText, { color }]}>
+                    {Math.round(score)}
+                </Text>
+                <Text style={styles.statusLabel}>{status}</Text>
+                <Text style={styles.disciplineLabel}>DISCIPLINE</Text>
             </View>
         </View>
     );
@@ -75,21 +96,29 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    scoreContainer: {
+    centerContent: {
         position: 'absolute',
         justifyContent: 'center',
         alignItems: 'center',
     },
     scoreText: {
-        fontSize: 56,
+        fontSize: 64,
         fontWeight: '900',
-        letterSpacing: -2,
+        letterSpacing: -3,
+        lineHeight: 64,
     },
-    labelText: {
-        fontSize: 12,
+    statusLabel: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#fff',
+        letterSpacing: 3,
+        marginTop: 8,
+    },
+    disciplineLabel: {
+        fontSize: 10,
         fontWeight: '600',
         color: '#666',
         letterSpacing: 2,
-        marginTop: 4,
+        marginTop: 2,
     },
 });

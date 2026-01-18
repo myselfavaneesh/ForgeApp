@@ -1,5 +1,5 @@
 import { Model } from '@nozbe/watermelondb';
-import { field, date, readonly } from '@nozbe/watermelondb/decorators';
+import { field, date, readonly, action } from '@nozbe/watermelondb/decorators';
 
 export type EnergyLevel = 'high' | 'medium' | 'low';
 export type TaskStatus = 'pending' | 'completed' | 'failed';
@@ -17,31 +17,31 @@ export default class Task extends Model {
   @readonly @date('created_at') createdAt!: Date;
   @readonly @date('updated_at') updatedAt!: Date;
 
-  async markCompleted() {
+  @action async markCompleted() {
     await this.update((task) => {
       task.status = 'completed';
     });
   }
 
-  async markFailed() {
+  @action async markFailed() {
     await this.update((task) => {
       task.status = 'failed';
     });
   }
 
-  async incrementSnooze() {
+  @action async incrementSnooze() {
     await this.update((task) => {
       task.snoozeCount += 1;
     });
   }
 
-  async commit() {
+  @action async commit() {
     await this.update((task) => {
       task.didCommit = true;
     });
   }
 
-  async toggleStatus() {
+  @action async toggleStatus() {
     await this.update((task) => {
       task.status = task.status === 'completed' ? 'pending' : 'completed';
     });

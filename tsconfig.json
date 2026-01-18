@@ -3,6 +3,9 @@
   "compilerOptions": {
     "strict": true,
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "emitDecoratorMetadata": true,
+    "jsx": "react-native",
+    "esModuleInterop": true,
+    "skipLibCheck": true
   }
 }
