@@ -1,11 +1,22 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
+    "target": "ES2020",
+    "module": "ESNext",
+    "lib": [
+      "ES2020",
+      "DOM"
+    ],
     "jsx": "react-native",
-    "esModuleInterop": true,
-    "skipLibCheck": true
-  }
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": false,
+    "useDefineForClassFields": false,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true
+  },
+  "extends": "expo/tsconfig.base"
 }

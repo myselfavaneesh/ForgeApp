@@ -9,6 +9,6 @@ export default class Project extends Model {
   @field('color') color!: string;
   @readonly @date('created_at') createdAt!: Date;
   @readonly @date('updated_at') updatedAt!: Date;
-
+ 
   @children('tasks') tasks!: Query<Task>;
 }
