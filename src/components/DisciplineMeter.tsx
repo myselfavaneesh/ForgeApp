@@ -5,9 +5,13 @@ import Animated, {
     useAnimatedProps,
     withSpring,
     interpolate,
+    withRepeat,
+    withTiming,
+    useAnimatedStyle,
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { DisciplineService } from '../services/DisciplineService';
+import { theme } from '../theme/styles';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -21,6 +25,8 @@ export const DisciplineMeter: React.FC<DisciplineMeterProps> = ({
     size = 220
 }) => {
     const progress = useSharedValue(0);
+    const breathe = useSharedValue(1);
+
     const radius = (size - 20) / 2;
     const circumference = 2 * Math.PI * radius;
     const strokeWidth = 12;
@@ -34,6 +40,15 @@ export const DisciplineMeter: React.FC<DisciplineMeterProps> = ({
         });
     }, [score]);
 
+    // Micro-animation: Breathing effect
+    useEffect(() => {
+        breathe.value = withRepeat(
+            withTiming(1.05, { duration: 2000 }),
+            -1,
+            true
+        );
+    }, []);
+
     const animatedProps = useAnimatedProps(() => {
         const strokeDashoffset = interpolate(
             progress.value,
@@ -46,19 +61,40 @@ export const DisciplineMeter: React.FC<DisciplineMeterProps> = ({
         };
     });
 
+    const glowStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ scale: breathe.value }],
+            opacity: interpolate(breathe.value, [1, 1.05], [0.3, 0.6]),
+        };
+    });
+
     // Get color and status based on score
     const color = DisciplineService.getScoreHexColor(score);
     const status = DisciplineService.getScoreStatus(score);
 
     return (
         <View style={[styles.container, { width: size, height: size }]}>
+            {/* Breathing Background Glow */}
+            <Animated.View
+                style={[
+                    StyleSheet.absoluteFillObject,
+                    {
+                        borderRadius: size / 2,
+                        backgroundColor: color,
+                        ...theme.shadows.glow,
+                        shadowColor: color, // Override shadow color dynamically
+                    },
+                    glowStyle
+                ]}
+            />
+
             <Svg width={size} height={size}>
                 {/* Background Circle */}
                 <Circle
                     cx={size / 2}
                     cy={size / 2}
                     r={radius}
-                    stroke="#1a1a1a"
+                    stroke={theme.colors.surface}
                     strokeWidth={strokeWidth}
                     fill="none"
                 />
@@ -102,22 +138,20 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     scoreText: {
+        ...theme.typography.h1,
         fontSize: 64,
-        fontWeight: '900',
-        letterSpacing: -3,
-        lineHeight: 64,
+        lineHeight: 70,
     },
     statusLabel: {
-        fontSize: 14,
-        fontWeight: '800',
-        color: '#fff',
+        ...theme.typography.caption,
+        color: theme.colors.white,
         letterSpacing: 3,
-        marginTop: 8,
+        marginTop: theme.spacing.s,
     },
     disciplineLabel: {
+        ...theme.typography.caption,
         fontSize: 10,
-        fontWeight: '600',
-        color: '#666',
+        color: theme.colors.textDim,
         letterSpacing: 2,
         marginTop: 2,
     },

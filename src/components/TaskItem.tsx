@@ -17,7 +17,8 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import withObservables from '@nozbe/with-observables';
-import Task from '../database/models/Task';
+import Task, { EnergyLevel } from '../database/models/Task';
+import { theme } from '../theme/styles';
 
 interface TaskItemProps {
     task: Task;
@@ -63,11 +64,11 @@ const TaskItemComponent: React.FC<TaskItemProps> = ({ task, onUpdate }) => {
     const getEnergyIcon = () => {
         switch (task.energyLevel) {
             case 'high':
-                return <Flame size={16} color="#FF1744" />;
+                return <Flame size={16} color={theme.colors.error} />;
             case 'medium':
-                return <Zap size={16} color="#FFD700" />;
+                return <Zap size={16} color={theme.colors.warning} />;
             case 'low':
-                return <Battery size={16} color="#00FF94" />;
+                return <Battery size={16} color={theme.colors.success} />;
         }
     };
 
@@ -84,9 +85,9 @@ const TaskItemComponent: React.FC<TaskItemProps> = ({ task, onUpdate }) => {
             {/* Checkbox */}
             <TouchableOpacity onPress={handleToggleComplete} style={styles.checkbox}>
                 {isCompleted ? (
-                    <CheckCircle2 size={24} color="#00FF94" />
+                    <CheckCircle2 size={24} color={theme.colors.success} />
                 ) : (
-                    <Circle size={24} color="#666" />
+                    <Circle size={24} color={theme.colors.textDim} />
                 )}
             </TouchableOpacity>
 
@@ -111,7 +112,7 @@ const TaskItemComponent: React.FC<TaskItemProps> = ({ task, onUpdate }) => {
 
                     {task.snoozeCount > 0 && (
                         <View style={styles.snoozeBadge}>
-                            <Clock size={12} color="#FF8C00" />
+                            <Clock size={12} color={theme.colors.warning} />
                             <Text style={styles.snoozeText}>{task.snoozeCount}</Text>
                         </View>
                     )}
@@ -132,13 +133,13 @@ const TaskItemComponent: React.FC<TaskItemProps> = ({ task, onUpdate }) => {
                         onPress={handleCommit}
                         style={styles.commitButton}
                     >
-                        <Target size={20} color="#FFD700" />
+                        <Target size={20} color={theme.colors.warning} />
                     </TouchableOpacity>
                 )}
 
                 {/* Snooze Button */}
                 <TouchableOpacity onPress={handleSnooze} style={styles.snoozeButton}>
-                    <Clock size={18} color="#666" />
+                    <Clock size={18} color={theme.colors.textDim} />
                 </TouchableOpacity>
             </View>
         </View>
@@ -149,29 +150,25 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#0a0a0a',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.borderRadius.l,
+        padding: theme.spacing.m,
+        marginBottom: theme.spacing.m,
         borderWidth: 1,
-        borderColor: '#1a1a1a',
+        borderColor: theme.colors.surfaceLight,
     },
     nonNegotiable: {
-        borderColor: '#00FF94',
+        borderColor: theme.colors.primary,
         borderWidth: 2,
     },
     committed: {
-        borderColor: '#FFD700',
+        borderColor: theme.colors.warning,
         borderWidth: 2,
-        // Glow effect for committed tasks
-        shadowColor: '#FFD700',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
+        ...theme.shadows.card,
+        shadowColor: theme.colors.warning, // Override for commitment glow
     },
     checkbox: {
-        marginRight: 12,
+        marginRight: theme.spacing.m,
     },
     content: {
         flex: 1,
@@ -179,34 +176,35 @@ const styles = StyleSheet.create({
     titleRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: theme.spacing.s,
     },
     title: {
-        fontSize: 16,
+        ...theme.typography.body,
         fontWeight: '600',
-        color: '#fff',
+        color: theme.colors.white,
         flex: 1,
     },
     completedText: {
         textDecorationLine: 'line-through',
-        color: '#666',
+        color: theme.colors.textDim,
     },
     badge: {
-        backgroundColor: '#00FF94',
-        paddingHorizontal: 8,
+        backgroundColor: theme.colors.primary,
+        paddingHorizontal: theme.spacing.s,
         paddingVertical: 2,
-        borderRadius: 4,
-        marginLeft: 8,
+        borderRadius: theme.borderRadius.s,
+        marginLeft: theme.spacing.s,
     },
     badgeText: {
+        ...theme.typography.caption,
         fontSize: 10,
         fontWeight: '900',
-        color: '#000',
+        color: theme.colors.black,
     },
     metaRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: theme.spacing.m,
     },
     energyBadge: {
         flexDirection: 'row',
@@ -214,50 +212,51 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     energyText: {
-        fontSize: 12,
-        color: '#666',
+        ...theme.typography.caption,
+        color: theme.colors.textDim,
         textTransform: 'uppercase',
     },
     snoozeBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        backgroundColor: '#FF8C0020',
+        backgroundColor: 'rgba(255, 140, 0, 0.2)', // transparent orange
         paddingHorizontal: 6,
         paddingVertical: 2,
-        borderRadius: 4,
+        borderRadius: theme.borderRadius.s,
     },
     snoozeText: {
-        fontSize: 12,
-        color: '#FF8C00',
+        ...theme.typography.caption,
+        color: theme.colors.warning,
         fontWeight: '600',
     },
     commitBadge: {
-        backgroundColor: '#FFD70020',
+        backgroundColor: 'rgba(255, 215, 0, 0.2)', // transparent gold
         paddingHorizontal: 6,
         paddingVertical: 2,
-        borderRadius: 4,
+        borderRadius: theme.borderRadius.s,
     },
     commitText: {
+        ...theme.typography.caption,
         fontSize: 10,
         fontWeight: '700',
-        color: '#FFD700',
+        color: theme.colors.warning,
     },
     actions: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginLeft: 8,
+        gap: theme.spacing.s,
+        marginLeft: theme.spacing.s,
     },
     commitButton: {
-        padding: 8,
-        backgroundColor: '#FFD70020',
-        borderRadius: 8,
+        padding: theme.spacing.s,
+        backgroundColor: 'rgba(255, 215, 0, 0.1)',
+        borderRadius: theme.borderRadius.m,
         borderWidth: 1,
-        borderColor: '#FFD700',
+        borderColor: theme.colors.warning,
     },
     snoozeButton: {
-        padding: 8,
+        padding: theme.spacing.s,
     },
 });
 

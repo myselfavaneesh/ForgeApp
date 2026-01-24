@@ -4,20 +4,24 @@ import {
     Text,
     StyleSheet,
     ScrollView,
-    TouchableOpacity,
     TextInput,
     Alert,
     SafeAreaView,
+    TouchableOpacity,
 } from 'react-native';
-import { Plus, Flame, Zap, Battery } from 'lucide-react-native';
+import { Plus } from 'lucide-react-native';
 import { Q } from '@nozbe/watermelondb';
 import withObservables from '@nozbe/with-observables';
 import { database } from '../database';
 import Task, { EnergyLevel } from '../database/models/Task';
 import { DisciplineMeter } from '../components/DisciplineMeter';
 import { TaskItem } from '../components/TaskItem';
+import { EnergySelector } from '../components/EnergySelector';
+import { NonNegotiablesList } from '../components/NonNegotiableList';
 import { DisciplineService } from '../services/DisciplineService';
 import { StatsService } from '../services/StatsService';
+import { AuditService } from '../services/AuditService';
+import { theme } from '../theme/styles';
 
 type EnergyFilter = 'all' | 'high' | 'medium' | 'low';
 
@@ -31,8 +35,8 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({ tasks }) => {
     const [isNonNegotiable, setIsNonNegotiable] = useState(false);
     const [energyFilter, setEnergyFilter] = useState<EnergyFilter>('all');
 
-    // Calculate real-time discipline score
-    const score = DisciplineService.getScore(tasks);
+    // Calculate real-time discipline score with Energy Bonus
+    const score = DisciplineService.getScore(tasks, selectedEnergy);
 
     // Sync score to database whenever it changes
     React.useEffect(() => {
@@ -41,6 +45,12 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({ tasks }) => {
         };
         syncScore();
     }, [score]);
+
+    // Run Audit on Mount
+    React.useEffect(() => {
+        // Check for end-of-day audit
+        AuditService.performReviewIfNeeded();
+    }, []);
 
 
     // Filter tasks based on energy level
@@ -81,29 +91,6 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({ tasks }) => {
         setIsNonNegotiable(false);
     };
 
-    const getEnergyIcon = (level: EnergyLevel, isActive: boolean) => {
-        const color = isActive ? getEnergyColor(level) : '#666';
-        switch (level) {
-            case 'high':
-                return <Flame size={16} color={color} />;
-            case 'medium':
-                return <Zap size={16} color={color} />;
-            case 'low':
-                return <Battery size={16} color={color} />;
-        }
-    };
-
-    const getEnergyColor = (level: EnergyLevel) => {
-        switch (level) {
-            case 'high':
-                return '#FF1744';
-            case 'medium':
-                return '#FFD700';
-            case 'low':
-                return '#00FF94';
-        }
-    };
-
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView
@@ -119,80 +106,27 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({ tasks }) => {
                 {/* Discipline Meter - Updates in real-time */}
                 <View style={styles.meterSection}>
                     <DisciplineMeter score={score} size={240} />
-                    <Text style={styles.meterLabel}>Your Character Workout Score</Text>
+                    <Text style={styles.meterLabel}>Discipline Integrity: {DisciplineService.getScoreStatus(score)}</Text>
                 </View>
+
+                {/* Energy Level Selector */}
+                <EnergySelector
+                    selectedEnergy={selectedEnergy}
+                    onSelect={setSelectedEnergy}
+                />
 
                 {/* Add Task Section */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>➕ ADD TASK</Text>
+                    <Text style={styles.sectionTitle}>new Protocol</Text>
                     <View style={styles.addTaskCard}>
                         <TextInput
                             style={styles.input}
                             placeholder="What needs to be done?"
-                            placeholderTextColor="#666"
+                            placeholderTextColor={theme.colors.textDim}
                             value={newTaskTitle}
                             onChangeText={setNewTaskTitle}
                             onSubmitEditing={handleAddTask}
                         />
-
-                        {/* Energy Level Selector */}
-                        <View style={styles.energySelector}>
-                            <Text style={styles.energyLabel}>Energy:</Text>
-
-                            <TouchableOpacity
-                                style={[
-                                    styles.energyButton,
-                                    selectedEnergy === 'high' && styles.energyButtonActive,
-                                ]}
-                                onPress={() => setSelectedEnergy('high')}
-                            >
-                                {getEnergyIcon('high', selectedEnergy === 'high')}
-                                <Text
-                                    style={[
-                                        styles.energyButtonText,
-                                        selectedEnergy === 'high' && styles.energyButtonTextActive,
-                                    ]}
-                                >
-                                    High
-                                </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[
-                                    styles.energyButton,
-                                    selectedEnergy === 'medium' && styles.energyButtonActive,
-                                ]}
-                                onPress={() => setSelectedEnergy('medium')}
-                            >
-                                {getEnergyIcon('medium', selectedEnergy === 'medium')}
-                                <Text
-                                    style={[
-                                        styles.energyButtonText,
-                                        selectedEnergy === 'medium' && styles.energyButtonTextActive,
-                                    ]}
-                                >
-                                    Med
-                                </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[
-                                    styles.energyButton,
-                                    selectedEnergy === 'low' && styles.energyButtonActive,
-                                ]}
-                                onPress={() => setSelectedEnergy('low')}
-                            >
-                                {getEnergyIcon('low', selectedEnergy === 'low')}
-                                <Text
-                                    style={[
-                                        styles.energyButtonText,
-                                        selectedEnergy === 'low' && styles.energyButtonTextActive,
-                                    ]}
-                                >
-                                    Low
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
 
                         {/* Non-Negotiable Toggle */}
                         <TouchableOpacity
@@ -210,15 +144,18 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({ tasks }) => {
                         </TouchableOpacity>
 
                         <TouchableOpacity style={styles.addButton} onPress={handleAddTask}>
-                            <Plus size={20} color="#000" />
+                            <Plus size={20} color={theme.colors.black} />
                             <Text style={styles.addButtonText}>Add Task</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
 
+                {/* Non-Negotiables List (New Section) */}
+                <NonNegotiablesList tasks={tasks} />
+
                 {/* Task Lab with Energy Filter */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>🔬 TASK LAB</Text>
+                    <Text style={styles.sectionTitle}>TASK LAB</Text>
 
                     {/* Energy Filter Pills */}
                     <View style={styles.filterRow}>
@@ -270,7 +207,7 @@ const HomeScreenComponent: React.FC<HomeScreenProps> = ({ tasks }) => {
                     {/* Empty State */}
                     {filteredTasks.length === 0 && (
                         <Text style={styles.emptyText}>
-                            No tasks yet. Add one above! 🚀
+                            No tasks yet. Add one above!
                         </Text>
                     )}
                 </View>
@@ -291,27 +228,50 @@ export const HomeScreen = enhance(HomeScreenComponent);
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: '#000000', // Pitch black background
+        backgroundColor: theme.colors.background,
     },
     container: {
         flex: 1,
-        backgroundColor: '#000000',
+        backgroundColor: theme.colors.background,
     },
     contentContainer: {
         padding: 20,
     },
     header: {
         marginBottom: 32,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 36,
-        fontWeight: '900',
-        color: '#00FF94',
-        letterSpacing: 6,
+        ...theme.typography.h1,
+        color: theme.colors.primary,
+        letterSpacing: 4,
+    },
+    themeToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        padding: 6,
+        borderRadius: 20,
+        backgroundColor: theme.colors.surface,
+        borderWidth: 1,
+        borderColor: theme.colors.surfaceLight,
+    },
+    themeToggleIndicator: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: theme.colors.textDim,
+    },
+    themeToggleText: {
+        ...theme.typography.caption,
+        fontSize: 10,
+        color: theme.colors.textDim,
     },
     headerSubtitle: {
-        fontSize: 14,
-        color: '#666',
+        ...theme.typography.caption,
+        color: theme.colors.textDim,
         letterSpacing: 2,
         marginTop: 4,
     },
@@ -320,8 +280,8 @@ const styles = StyleSheet.create({
         marginBottom: 40,
     },
     meterLabel: {
-        fontSize: 12,
-        color: '#666',
+        ...theme.typography.caption,
+        color: theme.colors.textDim,
         marginTop: 16,
         letterSpacing: 1,
     },
@@ -329,95 +289,63 @@ const styles = StyleSheet.create({
         marginBottom: 32,
     },
     sectionTitle: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#fff',
+        ...theme.typography.caption,
+        color: theme.colors.white,
         letterSpacing: 1,
         marginBottom: 16,
+        textTransform: 'uppercase',
     },
     addTaskCard: {
-        backgroundColor: '#0a0a0a',
+        backgroundColor: theme.colors.surface,
         borderRadius: 16,
         padding: 16,
         borderWidth: 1,
-        borderColor: '#1a1a1a',
+        borderColor: theme.colors.surfaceLight,
     },
     input: {
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
         borderRadius: 8,
         padding: 12,
-        color: '#fff',
+        color: theme.colors.white,
         fontSize: 16,
         marginBottom: 16,
         borderWidth: 1,
-        borderColor: '#1a1a1a',
-    },
-    energySelector: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-        gap: 8,
-    },
-    energyLabel: {
-        fontSize: 14,
-        color: '#666',
-        marginRight: 8,
-    },
-    energyButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 8,
-        backgroundColor: '#000',
-        borderWidth: 1,
-        borderColor: '#1a1a1a',
-    },
-    energyButtonActive: {
-        borderColor: '#00FF94',
-    },
-    energyButtonText: {
-        fontSize: 12,
-        color: '#666',
-    },
-    energyButtonTextActive: {
-        color: '#fff',
+        borderColor: theme.colors.surfaceLight,
     },
     toggleButton: {
         padding: 12,
         borderRadius: 8,
-        backgroundColor: '#000',
+        backgroundColor: theme.colors.background,
         borderWidth: 1,
-        borderColor: '#1a1a1a',
+        borderColor: theme.colors.surfaceLight,
         marginBottom: 16,
         alignItems: 'center',
     },
     toggleButtonActive: {
-        backgroundColor: '#00FF9420',
-        borderColor: '#00FF94',
+        backgroundColor: 'rgba(0, 255, 148, 0.1)',
+        borderColor: theme.colors.primary,
     },
     toggleButtonText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#666',
+        color: theme.colors.textDim,
     },
     toggleButtonTextActive: {
-        color: '#00FF94',
+        color: theme.colors.primary,
     },
     addButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        backgroundColor: '#00FF94',
+        backgroundColor: theme.colors.primary,
         padding: 16,
         borderRadius: 8,
     },
     addButtonText: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#000',
+        color: theme.colors.black,
     },
     filterRow: {
         flexDirection: 'row',
@@ -428,21 +356,21 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 20,
-        backgroundColor: '#0a0a0a',
+        backgroundColor: theme.colors.surface,
         borderWidth: 1,
-        borderColor: '#1a1a1a',
+        borderColor: theme.colors.surfaceLight,
     },
     filterChipActive: {
-        backgroundColor: '#00FF9420',
-        borderColor: '#00FF94',
+        backgroundColor: 'rgba(0, 255, 148, 0.1)',
+        borderColor: theme.colors.primary,
     },
     filterChipText: {
         fontSize: 12,
         fontWeight: '600',
-        color: '#666',
+        color: theme.colors.textDim,
     },
     filterChipTextActive: {
-        color: '#00FF94',
+        color: theme.colors.primary,
     },
     taskSection: {
         marginBottom: 24,
@@ -450,14 +378,14 @@ const styles = StyleSheet.create({
     taskSectionTitle: {
         fontSize: 12,
         fontWeight: '600',
-        color: '#666',
+        color: theme.colors.textDim,
         letterSpacing: 1,
         marginBottom: 12,
         textTransform: 'uppercase',
     },
     emptyText: {
         fontSize: 14,
-        color: '#666',
+        color: theme.colors.textDim,
         textAlign: 'center',
         padding: 32,
     },

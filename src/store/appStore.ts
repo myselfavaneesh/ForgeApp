@@ -1,14 +1,16 @@
 import { create } from 'zustand';
 import { EnergyLevel } from '../database/models/Task';
 
+/**
+ * Global UI state management with Zustand
+ * 
+ * Note: Discipline score is NOT stored here - it's calculated in real-time
+ * from tasks via DisciplineService.getScore()
+ */
 interface AppState {
   // UI State
   selectedEnergyFilter: EnergyLevel | 'all';
   setEnergyFilter: (filter: EnergyLevel | 'all') => void;
-
-  // Score State
-  currentScore: number;
-  setCurrentScore: (score: number) => void;
 
   // Focus Timer State
   focusMinutes: number;
@@ -23,10 +25,6 @@ export const useAppStore = create<AppState>((set) => ({
   // UI State
   selectedEnergyFilter: 'all',
   setEnergyFilter: (filter) => set({ selectedEnergyFilter: filter }),
-
-  // Score State
-  currentScore: 100,
-  setCurrentScore: (score) => set({ currentScore: score }),
 
   // Focus Timer State
   focusMinutes: 0,

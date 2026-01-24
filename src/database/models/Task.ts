@@ -7,7 +7,7 @@ export type TaskStatus = 'pending' | 'completed' | 'failed';
 export default class Task extends Model {
   static table = 'tasks';
 
- @field('title') title!: string;
+  @field('title') title!: string;
   @field('is_non_negotiable') isNonNegotiable!: boolean;
   @field('energy_level') energyLevel!: EnergyLevel;
   @field('status') status!: TaskStatus;
